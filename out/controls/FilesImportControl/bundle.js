@@ -727,9 +727,10 @@ module.exports = Reactv16;
 /******/ })()
 ;
 if (window.ComponentFramework && window.ComponentFramework.registerControl) {
-	ComponentFramework.registerControl('CustomFI.FluentFilesImportControl', pcf_tools_652ac3f36e1e4bca82eb3c1dc44e6fad.FluentFilesImportControl);
+	ComponentFramework.registerControl('CustomFI.v2.FluentFilesImportControl', pcf_tools_652ac3f36e1e4bca82eb3c1dc44e6fad.FluentFilesImportControl);
 } else {
 	var CustomFI = CustomFI || {};
-	CustomFI.FluentFilesImportControl = pcf_tools_652ac3f36e1e4bca82eb3c1dc44e6fad.FluentFilesImportControl;
+	CustomFI.v2 = CustomFI.v2 || {};
+	CustomFI.v2.FluentFilesImportControl = pcf_tools_652ac3f36e1e4bca82eb3c1dc44e6fad.FluentFilesImportControl;
 	pcf_tools_652ac3f36e1e4bca82eb3c1dc44e6fad = undefined;
 }

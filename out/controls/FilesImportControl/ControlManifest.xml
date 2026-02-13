@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <manifest>
-  <control namespace="CustomFI" constructor="FluentFilesImportControl" version="1.0.0" display-name-key="Fluent File Import Control (1.0.0)" description-key="Allow to select file or files and using Powwer Automate create that files in to M365." control-type="virtual" api-version="1.3.18">
+  <control namespace="CustomFI.v2" constructor="FluentFilesImportControl" version="1.0.3" display-name-key="Fluent File Import Control (1.0.0)" description-key="Allow to select file or files and using Powwer Automate create that files in to M365." control-type="virtual" api-version="1.3.18">
     <external-service-usage enabled="false"/>
     <property name="Text" display-name-key="Text" description-key="Text to display in the button." of-type="SingleLine.Text" usage="bound" required="true" default-value="File upload"/>
     <property name="ButtonIcon" display-name-key="ButtonIcon" description-key="Icon to display in the button." of-type="SingleLine.Text" usage="bound" required="true" default-value="Attach"/>
