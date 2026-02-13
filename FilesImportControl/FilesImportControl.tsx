@@ -28,6 +28,7 @@ export interface IFilesImportControlProps {
   buttonAllowedFileTypes: string;
   buttonAllowDropFiles: boolean;
   buttonAllowDropFilesText: string;
+  compressionQuality: number;
   canvasAppCurrentTheme: Theme;
   onEvent: (event: any) => void;
 }
@@ -54,6 +55,7 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
   buttonAllowedFileTypes,
   buttonAllowDropFiles,
   buttonAllowDropFilesText,
+  compressionQuality,
   canvasAppCurrentTheme,
   onEvent
 }) => {
@@ -95,6 +97,57 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const importFileRef = createRef<HTMLInputElement>();
 
+  // compressImage: Compresses an image file using canvas and returns the compressed data URL.
+  const compressImage = (file: File, quality: number): Promise<string | null> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onerror = () => {
+        console.error(`Error reading image file: ${file.name}`);
+        reject(null);
+      };
+
+      reader.onload = (e) => {
+        const img = new Image();
+        
+        img.onerror = () => {
+          console.error(`Error loading image: ${file.name}`);
+          reject(null);
+        };
+
+        img.onload = () => {
+          try {
+            // Create canvas element
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+
+            // Draw image on canvas
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              console.error('Failed to get canvas context');
+              reject(null);
+              return;
+            }
+            
+            ctx.drawImage(img, 0, 0);
+
+            // Compress and export as JPEG with specified quality
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+            resolve(compressedDataUrl);
+          } catch (error) {
+            console.error(`Error compressing image: ${file.name}`, error);
+            reject(null);
+          }
+        };
+
+        img.src = e.target?.result as string;
+      };
+
+      reader.readAsDataURL(file);
+    });
+  };
+
   // readFile: Reads a file using FileReader and returns its result as a data URL.
   const readFile = (file: File): Promise<string | null> => {
     return new Promise((resolve, reject) => {
@@ -127,7 +180,14 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
       // Process each file and create an array of objects with file name and content bytes.
       const filesArray = await Promise.all(
         Array.from(files).map(async (file) => {
-          const fileContent = await readFile(file);
+          let fileContent: string | null;
+          
+          // Check if file is an image and compress it
+          if (file.type.startsWith('image/')) {
+            fileContent = await compressImage(file, compressionQuality);
+          } else {
+            fileContent = await readFile(file);
+          }
 
           return {
             name: file.name,

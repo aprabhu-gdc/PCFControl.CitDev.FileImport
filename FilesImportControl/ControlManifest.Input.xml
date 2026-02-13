@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest>
-  <control namespace="cdFI" constructor="FluentFilesImportControl" version="1.0.0" display-name-key="Fluent File Import Control (1.0.0)" description-key="Allow to select file or files and using Powwer Automate create that files in to M365." control-type="virtual" >
+  <control namespace="CustomFI" constructor="FluentFilesImportControl" version="1.0.0" display-name-key="Fluent File Import Control (1.0.0)" description-key="Allow to select file or files and using Powwer Automate create that files in to M365." control-type="virtual" >
     <!--external-service-usage node declares whether this 3rd party PCF control is using external service or not, if yes, this control will be considered as premium and please also add the external domain it is using.
     If it is not using any external service, please set the enabled="false" and DO NOT add any domain below. The "enabled" will be false by default.
     Example1:
@@ -78,6 +78,7 @@
     <property name="ShowActionSpinner" display-name-key="Show action spinner" description-key="Display a spinner animation on the button during the upload process." of-type="TwoOptions" usage="input" required="false" default-value="true" />
     <property name="ShowSecondaryContent" display-name-key="Show secondary content" description-key="Displays an additional line of text below the button label." of-type="TwoOptions" usage="bound" required="false" default-value="false" />
     <property name="SecondaryContent" display-name-key="Secondary content text" description-key="Additional line of text below the button label." of-type="SingleLine.Text" usage="bound" required="false" />
+    <property name="CompressionQuality" display-name-key="Compression quality" description-key="Image compression quality (0.1 to 1.0). Lower values result in smaller file sizes." of-type="FP" usage="input" required="true" default-value="0.7" />
 
     <!-- File -->
     <property name="FilesAsJSON" display-name-key="Selected file(s)" description-key="Selected file(s)" of-type="SingleLine.Text" usage="output" required="false" hidden="false" default-value=""/>

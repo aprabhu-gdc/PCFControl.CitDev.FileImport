@@ -25,6 +25,7 @@ export interface IInputs {
     ShowActionSpinner: ComponentFramework.PropertyTypes.TwoOptionsProperty;
     ShowSecondaryContent: ComponentFramework.PropertyTypes.TwoOptionsProperty;
     SecondaryContent: ComponentFramework.PropertyTypes.StringProperty;
+    CompressionQuality: ComponentFramework.PropertyTypes.FloatingNumberProperty;
 }
 export interface IOutputs {
     Text?: string;

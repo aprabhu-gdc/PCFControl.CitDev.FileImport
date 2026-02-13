@@ -46,6 +46,7 @@ export class FluentFilesImportControl implements ComponentFramework.ReactControl
             buttonAllowedFileTypes: context.parameters.AllowedFileTypes?.raw || "*",            
             buttonAllowDropFiles: context.parameters.AllowDropFiles?.raw ?? false,
             buttonAllowDropFilesText: context.parameters.AllowDropFilesText?.raw || "Drop files here...",
+            compressionQuality: context.parameters.CompressionQuality?.raw ?? 0.7,
             onEvent: this.handleFileUpload.bind(this)
         };
 

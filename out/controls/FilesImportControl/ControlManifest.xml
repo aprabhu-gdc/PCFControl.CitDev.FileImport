@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <manifest>
-  <control namespace="cdFI" constructor="FluentFilesImportControl" version="1.0.0" display-name-key="Fluent File Import Control (1.0.0)" description-key="Allow to select file or files and using Powwer Automate create that files in to M365." control-type="virtual" api-version="1.3.15">
+  <control namespace="CustomFI" constructor="FluentFilesImportControl" version="1.0.0" display-name-key="Fluent File Import Control (1.0.0)" description-key="Allow to select file or files and using Powwer Automate create that files in to M365." control-type="virtual" api-version="1.3.18">
     <external-service-usage enabled="false"/>
     <property name="Text" display-name-key="Text" description-key="Text to display in the button." of-type="SingleLine.Text" usage="bound" required="true" default-value="File upload"/>
     <property name="ButtonIcon" display-name-key="ButtonIcon" description-key="Icon to display in the button." of-type="SingleLine.Text" usage="bound" required="true" default-value="Attach"/>
@@ -57,6 +57,7 @@
     <property name="ShowActionSpinner" display-name-key="Show action spinner" description-key="Display a spinner animation on the button during the upload process." of-type="TwoOptions" usage="input" required="false" default-value="true"/>
     <property name="ShowSecondaryContent" display-name-key="Show secondary content" description-key="Displays an additional line of text below the button label." of-type="TwoOptions" usage="bound" required="false" default-value="false"/>
     <property name="SecondaryContent" display-name-key="Secondary content text" description-key="Additional line of text below the button label." of-type="SingleLine.Text" usage="bound" required="false"/>
+    <property name="CompressionQuality" display-name-key="Compression quality" description-key="Image compression quality (0.1 to 1.0). Lower values result in smaller file sizes." of-type="FP" usage="input" required="true" default-value="0.7"/>
     <property name="FilesAsJSON" display-name-key="Selected file(s)" description-key="Selected file(s)" of-type="SingleLine.Text" usage="output" required="false" hidden="false" default-value=""/>
     <resources>
       <code path="bundle.js" order="1"/>
@@ -64,6 +65,6 @@
       <platform-library name="Fluent" version="9.46.2"/>
     </resources>
     <feature-usage/>
-    <built-by name="pac" version="1.38.3"/>
+    <built-by name="pac" version="1.51.1"/>
   </control>
 </manifest>
