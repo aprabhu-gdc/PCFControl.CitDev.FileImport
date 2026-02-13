@@ -26,6 +26,8 @@ export interface IInputs {
     ShowSecondaryContent: ComponentFramework.PropertyTypes.TwoOptionsProperty;
     SecondaryContent: ComponentFramework.PropertyTypes.StringProperty;
     CompressionQuality: ComponentFramework.PropertyTypes.FloatingNumberProperty;
+    RequestPageNumber: ComponentFramework.PropertyTypes.WholeNumberProperty;
+    BatchSize: ComponentFramework.PropertyTypes.WholeNumberProperty;
 }
 export interface IOutputs {
     Text?: string;
@@ -35,4 +37,6 @@ export interface IOutputs {
     ShowSecondaryContent?: boolean;
     SecondaryContent?: string;
     FilesAsJSON?: string;
+    TotalFileCount?: number;
+    CurrentPageNumber?: number;
 }

@@ -5,6 +5,8 @@ import { FilesImportControl, IFilesImportControlProps } from "./FilesImportContr
 export class FluentFilesImportControl implements ComponentFramework.ReactControl<IInputs, IOutputs> {
     private notifyOutputChanged: () => void;
     private filesAsJSON: string | null = null;
+    private totalFileCount: number = 0;
+    private currentPageNumber: number = 0;
 
     /**
      * Used to initialize the control instance. Controls can kick off remote server calls and other initialization actions here.
@@ -47,6 +49,8 @@ export class FluentFilesImportControl implements ComponentFramework.ReactControl
             buttonAllowDropFiles: context.parameters.AllowDropFiles?.raw ?? false,
             buttonAllowDropFilesText: context.parameters.AllowDropFilesText?.raw || "Drop files here...",
             compressionQuality: context.parameters.CompressionQuality?.raw ?? 0.7,
+            requestPageNumber: context.parameters.RequestPageNumber?.raw ?? 0,
+            batchSize: context.parameters.BatchSize?.raw ?? 5,
             onEvent: this.handleFileUpload.bind(this)
         };
 
@@ -55,11 +59,12 @@ export class FluentFilesImportControl implements ComponentFramework.ReactControl
 
     /**
      * Handles the file upload event.
-     * @param event Contains JSON with the list of uploaded files.
+     * @param event Contains JSON with the batch of files and pagination metadata.
      */
-    private handleFileUpload(event: { filesJSON: string }): void {
-        console.log("Pliki załadowane:", event.filesJSON);
+    private handleFileUpload(event: { filesJSON: string; totalFileCount?: number; currentPageNumber?: number }): void {
         this.filesAsJSON = event.filesJSON;
+        this.totalFileCount = event.totalFileCount ?? 0;
+        this.currentPageNumber = event.currentPageNumber ?? 0;
         this.notifyOutputChanged();
     }
 
@@ -70,6 +75,8 @@ export class FluentFilesImportControl implements ComponentFramework.ReactControl
     public getOutputs(): IOutputs {
         return {
             FilesAsJSON: this.filesAsJSON ?? "",
+            TotalFileCount: this.totalFileCount,
+            CurrentPageNumber: this.currentPageNumber,
         };
     }  
 

@@ -58,7 +58,11 @@
     <property name="ShowSecondaryContent" display-name-key="Show secondary content" description-key="Displays an additional line of text below the button label." of-type="TwoOptions" usage="bound" required="false" default-value="false"/>
     <property name="SecondaryContent" display-name-key="Secondary content text" description-key="Additional line of text below the button label." of-type="SingleLine.Text" usage="bound" required="false"/>
     <property name="CompressionQuality" display-name-key="Compression quality" description-key="Image compression quality (0.1 to 1.0). Lower values result in smaller file sizes." of-type="FP" usage="input" required="true" default-value="0.7"/>
-    <property name="FilesAsJSON" display-name-key="Selected file(s)" description-key="Selected file(s)" of-type="SingleLine.Text" usage="output" required="false" hidden="false" default-value=""/>
+    <property name="RequestPageNumber" display-name-key="Request page number" description-key="Used by Power Apps to request a specific batch of files. Set to 1 to get the first batch, 2 for the second batch, etc." of-type="Whole.None" usage="input" required="true" default-value="0"/>
+    <property name="BatchSize" display-name-key="Batch size" description-key="Number of files to process and return in each batch. Lower values reduce memory usage." of-type="Whole.None" usage="input" required="true" default-value="5"/>
+    <property name="FilesAsJSON" display-name-key="Selected file(s)" description-key="JSON string containing the current batch of processed files." of-type="SingleLine.Text" usage="output" required="false" hidden="false" default-value=""/>
+    <property name="TotalFileCount" display-name-key="Total file count" description-key="Total number of files selected/dropped by the user." of-type="Whole.None" usage="output" required="false" default-value="0"/>
+    <property name="CurrentPageNumber" display-name-key="Current page number" description-key="The page number of the batch currently being output." of-type="Whole.None" usage="output" required="false" default-value="0"/>
     <resources>
       <code path="bundle.js" order="1"/>
       <platform-library name="React" version="16.14.0"/>

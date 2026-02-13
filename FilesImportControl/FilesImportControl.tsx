@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useState, createRef } from "react";
+import { useState, useEffect, createRef } from "react";
 import { Caption1, Button, CompoundButton, Spinner, FluentProvider, Theme, webLightTheme,} from "@fluentui/react-components";
 import { AttachRegular, AttachFilled, CheckmarkFilled } from "@fluentui/react-icons";
 import { iconRegularMapping, iconFilledMapping } from "./iconsMapping";
@@ -29,6 +29,8 @@ export interface IFilesImportControlProps {
   buttonAllowDropFiles: boolean;
   buttonAllowDropFilesText: string;
   compressionQuality: number;
+  requestPageNumber: number;
+  batchSize: number;
   canvasAppCurrentTheme: Theme;
   onEvent: (event: any) => void;
 }
@@ -56,6 +58,8 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
   buttonAllowDropFiles,
   buttonAllowDropFilesText,
   compressionQuality,
+  requestPageNumber,
+  batchSize,
   canvasAppCurrentTheme,
   onEvent
 }) => {
@@ -93,8 +97,8 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
   };
 
   // FILES
-  // Create a reference for the hidden file input.
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  // Create a reference for the hidden file input and store raw (unprocessed) files.
+  const [rawFiles, setRawFiles] = useState<File[]>([]);
   const importFileRef = createRef<HTMLInputElement>();
 
   // compressImage: Compresses an image file using canvas and returns the compressed data URL.
@@ -168,18 +172,33 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
     });
   };
 
-  // processFiles: Processes a list of files by reading their contents and preparing a JSON object.
-  const processFiles = async (files: FileList | File[]) => {
-    if (!files || files.length === 0) return;
+  // processBatch: Processes a specific batch (page) of files based on requestPageNumber and batchSize.
+  const processBatch = async (pageNumber: number) => {
+    if (!rawFiles || rawFiles.length === 0 || pageNumber <= 0) {
+      // If no files or invalid page number, output empty result
+      onEvent({ 
+        filesJSON: "", 
+        totalFileCount: 0, 
+        currentPageNumber: 0 
+      });
+      return;
+    }
 
     try {
       if (buttonShowActionSpinner) {
         setButtonLoadingState(ButtonLoadingStateEnum.Loading);
       }
 
-      // Process each file and create an array of objects with file name and content bytes.
+      // Calculate start and end indices for the current page
+      const startIndex = (pageNumber - 1) * batchSize;
+      const endIndex = Math.min(startIndex + batchSize, rawFiles.length);
+      
+      // Slice the raw files array to get only the current batch
+      const currentBatch = rawFiles.slice(startIndex, endIndex);
+
+      // Process only the current batch of files
       const filesArray = await Promise.all(
-        Array.from(files).map(async (file) => {
+        currentBatch.map(async (file) => {
           let fileContent: string | null;
           
           // Check if file is an image and compress it
@@ -197,28 +216,48 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
         })
       );
 
-      // Convert the array into a JSON string.
-      setSelectedFiles(Array.from(files));
+      // Convert the batch into a JSON string
       const jsonString = JSON.stringify(filesArray);
       
-      // Trigger the onEvent callback with the processed files JSON.
-      onEvent({ filesJSON: jsonString });
+      // Trigger the onEvent callback with the batch JSON and metadata
+      onEvent({ 
+        filesJSON: jsonString,
+        totalFileCount: rawFiles.length,
+        currentPageNumber: pageNumber
+      });
 
-      // Set button state to "loaded" if action spinner is enabled.
+      // Set button state to "loaded" if action spinner is enabled
       if (buttonShowActionSpinner) {
         setButtonLoadingState(ButtonLoadingStateEnum.Loaded);
       }
     } catch (error) {
-      console.error("Error processing files:", error)
+      console.error("Error processing batch:", error);
       setButtonLoadingState(ButtonLoadingStateEnum.Initial);
     }
   };
 
+  // useEffect: Watch for changes to requestPageNumber and process the requested batch
+  useEffect(() => {
+    if (requestPageNumber > 0 && rawFiles.length > 0) {
+      processBatch(requestPageNumber);
+    }
+  }, [requestPageNumber]);
+
   // onFileChange: Event handler for when a file is selected using the file input.
   const onFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files) {
-      await processFiles(event.target.files);
+    if (event.target.files && event.target.files.length > 0) {
+      // Store raw files without processing them all at once
+      const filesArray = Array.from(event.target.files);
+      setRawFiles(filesArray);
+      
+      // Immediately process the first batch (Page 1)
+      setButtonLoadingState(ButtonLoadingStateEnum.Initial);
+      
+      // Clear the input value for re-selection
       event.target.value = "";
+      
+      // Process first page immediately
+      setTimeout(() => processBatch(1), 0);
     }
   };
 
@@ -257,8 +296,16 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
     event.preventDefault();
     setIsDragging(false);
 
-    if (event.dataTransfer.files) {
-      await processFiles(event.dataTransfer.files);
+    if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+      // Store raw files without processing them all at once
+      const filesArray = Array.from(event.dataTransfer.files);
+      setRawFiles(filesArray);
+      
+      // Reset button state
+      setButtonLoadingState(ButtonLoadingStateEnum.Initial);
+      
+      // Process first page immediately
+      setTimeout(() => processBatch(1), 0);
     }
   };
 
