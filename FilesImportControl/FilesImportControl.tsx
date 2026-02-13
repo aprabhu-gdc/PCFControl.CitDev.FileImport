@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useState, useEffect, createRef } from "react";
+import { useState, useEffect, useCallback, createRef } from "react";
 import { Caption1, Button, CompoundButton, Spinner, FluentProvider, Theme, webLightTheme,} from "@fluentui/react-components";
 import { AttachRegular, AttachFilled, CheckmarkFilled } from "@fluentui/react-icons";
 import { iconRegularMapping, iconFilledMapping } from "./iconsMapping";
@@ -173,13 +173,27 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
   };
 
   // processBatch: Processes a specific batch (page) of files based on requestPageNumber and batchSize.
-  const processBatch = async (pageNumber: number) => {
-    if (!rawFiles || rawFiles.length === 0 || pageNumber <= 0) {
-      // If no files or invalid page number, output empty result
+  const processBatch = useCallback(async (pageNumber: number) => {
+    if (!rawFiles || rawFiles.length === 0) {
+      // If no files, don't output anything to avoid confusion
+      return;
+    }
+
+    if (pageNumber <= 0) {
+      // Invalid page number
+      return;
+    }
+
+    // Calculate start and end indices for the current page
+    const startIndex = (pageNumber - 1) * batchSize;
+    
+    // Check if page is out of range
+    if (startIndex >= rawFiles.length) {
+      // Page number exceeds available files, output empty batch with metadata
       onEvent({ 
-        filesJSON: "", 
-        totalFileCount: 0, 
-        currentPageNumber: 0 
+        filesJSON: JSON.stringify([]),
+        totalFileCount: rawFiles.length,
+        currentPageNumber: pageNumber
       });
       return;
     }
@@ -189,8 +203,6 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
         setButtonLoadingState(ButtonLoadingStateEnum.Loading);
       }
 
-      // Calculate start and end indices for the current page
-      const startIndex = (pageNumber - 1) * batchSize;
       const endIndex = Math.min(startIndex + batchSize, rawFiles.length);
       
       // Slice the raw files array to get only the current batch
@@ -234,30 +246,82 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
       console.error("Error processing batch:", error);
       setButtonLoadingState(ButtonLoadingStateEnum.Initial);
     }
-  };
+  }, [rawFiles, batchSize, compressionQuality, buttonShowActionSpinner, onEvent]);
 
   // useEffect: Watch for changes to requestPageNumber and process the requested batch
   useEffect(() => {
     if (requestPageNumber > 0 && rawFiles.length > 0) {
       processBatch(requestPageNumber);
     }
-  }, [requestPageNumber]);
+  }, [requestPageNumber, rawFiles, processBatch]);
 
   // onFileChange: Event handler for when a file is selected using the file input.
-  const onFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const onFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
-      // Store raw files without processing them all at once
       const filesArray = Array.from(event.target.files);
-      setRawFiles(filesArray);
       
-      // Immediately process the first batch (Page 1)
+      // Reset button state
       setButtonLoadingState(ButtonLoadingStateEnum.Initial);
+      
+      // Store raw files - React will batch this with the state update
+      setRawFiles(prevFiles => {
+        // Process first batch immediately after state update
+        // Use setTimeout to ensure state is committed
+        setTimeout(() => {
+          processBatchWithFiles(filesArray, 1);
+        }, 10);
+        return filesArray;
+      });
       
       // Clear the input value for re-selection
       event.target.value = "";
-      
-      // Process first page immediately
-      setTimeout(() => processBatch(1), 0);
+    }
+  };
+
+  // Helper to process batch with explicit files array (avoids stale closure)
+  const processBatchWithFiles = async (files: File[], pageNumber: number) => {
+    if (!files || files.length === 0 || pageNumber <= 0) return;
+
+    const startIndex = (pageNumber - 1) * batchSize;
+    if (startIndex >= files.length) return;
+
+    try {
+      if (buttonShowActionSpinner) {
+        setButtonLoadingState(ButtonLoadingStateEnum.Loading);
+      }
+
+      const endIndex = Math.min(startIndex + batchSize, files.length);
+      const currentBatch = files.slice(startIndex, endIndex);
+
+      const filesArray = await Promise.all(
+        currentBatch.map(async (file) => {
+          let fileContent: string | null;
+          if (file.type.startsWith('image/')) {
+            fileContent = await compressImage(file, compressionQuality);
+          } else {
+            fileContent = await readFile(file);
+          }
+          return {
+            name: file.name,
+            size: file.size,
+            contentBytes: fileContent || "",
+          };
+        })
+      );
+
+      const jsonString = JSON.stringify(filesArray);
+      onEvent({ 
+        filesJSON: jsonString,
+        totalFileCount: files.length,
+        currentPageNumber: pageNumber
+      });
+
+      if (buttonShowActionSpinner) {
+        setButtonLoadingState(ButtonLoadingStateEnum.Loaded);
+      }
+    } catch (error) {
+      console.error("Error processing batch:", error);
+      setButtonLoadingState(ButtonLoadingStateEnum.Initial);
     }
   };
 
@@ -292,20 +356,23 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
   };
 
   // onDrop: Triggered when a file is dropped onto the control.
-  const onDrop = async (event: React.DragEvent) => {
+  const onDrop = (event: React.DragEvent) => {
     event.preventDefault();
     setIsDragging(false);
 
     if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
-      // Store raw files without processing them all at once
       const filesArray = Array.from(event.dataTransfer.files);
-      setRawFiles(filesArray);
       
       // Reset button state
       setButtonLoadingState(ButtonLoadingStateEnum.Initial);
       
-      // Process first page immediately
-      setTimeout(() => processBatch(1), 0);
+      // Store raw files and process first batch
+      setRawFiles(prevFiles => {
+        setTimeout(() => {
+          processBatchWithFiles(filesArray, 1);
+        }, 10);
+        return filesArray;
+      });
     }
   };
 
