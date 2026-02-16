@@ -1,10 +1,15 @@
 import * as React from "react";
-import { useState, useEffect, useCallback, createRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Caption1, Button, CompoundButton, Spinner, FluentProvider, Theme, webLightTheme,} from "@fluentui/react-components";
 import { AttachRegular, AttachFilled, CheckmarkFilled } from "@fluentui/react-icons";
 import { iconRegularMapping, iconFilledMapping } from "./iconsMapping";
 import { ButtonLoadingStateEnum } from "./utils";
 import { getButtonAppearance, getButtonIconPosition, getButtonShape, getButtonSize, getButtonStyle, getDisplayMode,} from "./utils";
+
+// Maximum pixel dimension for compressed images (width or height).
+// Phone photos (4000x3000) are downscaled to fit within this limit,
+// reducing canvas memory from ~48MB to ~8MB per image.
+const MAX_IMAGE_DIMENSION = 1920;
 
 export interface IFilesImportControlProps {
   buttonText: string;
@@ -97,73 +102,100 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
   };
 
   // FILES
-  // Create a reference for the hidden file input and store raw (unprocessed) files.
-  const [rawFiles, setRawFiles] = useState<File[]>([]);
-  const importFileRef = createRef<HTMLInputElement>();
+  // Use a ref instead of state for raw files — File handles don't need to trigger re-renders
+  // and keeping them in state with 100+ files causes unnecessary render cycles.
+  const rawFilesRef = useRef<File[]>([]);
+  const [rawFileCount, setRawFileCount] = useState<number>(0);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
-  // compressImage: Compresses an image file using canvas and returns the compressed data URL.
+  // Reusable canvas kept outside the per-file scope so we allocate only once.
+  // This avoids repeated canvas create/destroy overhead across files within a batch.
+  const reusableCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const getReusableCanvas = (): HTMLCanvasElement => {
+    if (!reusableCanvasRef.current) {
+      reusableCanvasRef.current = document.createElement("canvas");
+    }
+    return reusableCanvasRef.current;
+  };
+
+  // compressImage: Compresses and downscales an image file using canvas.
+  // Uses createObjectURL instead of readAsDataURL for lighter intermediate loading,
+  // downscales to MAX_IMAGE_DIMENSION, and explicitly cleans up all resources.
   const compressImage = (file: File, quality: number): Promise<string | null> => {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
+      // Use createObjectURL — it's a lightweight pointer to the file blob,
+      // unlike readAsDataURL which converts the entire file to a base64 string.
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
 
-      reader.onerror = () => {
-        console.error(`Error reading image file: ${file.name}`);
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        console.error(`Error loading image: ${file.name}`);
         reject(null);
       };
 
-      reader.onload = (e) => {
-        const img = new Image();
-        
-        img.onerror = () => {
-          console.error(`Error loading image: ${file.name}`);
-          reject(null);
-        };
-
-        img.onload = () => {
-          try {
-            // Create canvas element
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-
-            // Draw image on canvas
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-              console.error('Failed to get canvas context');
-              reject(null);
-              return;
-            }
-            
-            ctx.drawImage(img, 0, 0);
-
-            // Compress and export as JPEG with specified quality
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-            resolve(compressedDataUrl);
-          } catch (error) {
-            console.error(`Error compressing image: ${file.name}`, error);
-            reject(null);
+      img.onload = () => {
+        try {
+          // --- Downscale to MAX_IMAGE_DIMENSION ---
+          // A 4000x3000 canvas = ~48MB RGBA. Downscaling to 1920x1440 = ~11MB.
+          let { width, height } = img;
+          if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+            const ratio = Math.min(MAX_IMAGE_DIMENSION / width, MAX_IMAGE_DIMENSION / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
           }
-        };
 
-        img.src = e.target?.result as string;
+          // Reuse a single canvas element to avoid allocation churn
+          const canvas = getReusableCanvas();
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            URL.revokeObjectURL(objectUrl);
+            console.error("Failed to get canvas context");
+            reject(null);
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Compress and export as JPEG with specified quality
+          const compressedDataUrl = canvas.toDataURL("image/jpeg", quality);
+
+          // --- Explicit cleanup ---
+          // Clear the canvas buffer immediately to free ~11MB of RGBA pixel memory
+          canvas.width = 0;
+          canvas.height = 0;
+          // Revoke the object URL to release the file blob reference
+          URL.revokeObjectURL(objectUrl);
+          // Detach the image source to allow GC of the decoded bitmap
+          img.src = "";
+
+          resolve(compressedDataUrl);
+        } catch (error) {
+          URL.revokeObjectURL(objectUrl);
+          img.src = "";
+          console.error(`Error compressing image: ${file.name}`, error);
+          reject(null);
+        }
       };
 
-      reader.readAsDataURL(file);
+      img.src = objectUrl;
     });
   };
 
-  // readFile: Reads a file using FileReader and returns its result as a data URL.
+  // readFile: Reads a non-image file using FileReader and returns its result as a data URL.
   const readFile = (file: File): Promise<string | null> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
 
-      // Handle file reading errors.
       reader.onerror = () => {
         console.error(`Error reading file: ${file.name}`);
         reject(null);
       };
 
-      // When reading is finished, resolve the promise with the result.
       reader.onload = () => {
         resolve(reader.result as string);
       };
@@ -172,28 +204,60 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
     });
   };
 
+  // processFileSequentially: Processes a single file (compress or read).
+  // Returns the result object for one file.
+  const processOneFile = async (file: File, quality: number): Promise<{ name: string; size: number; contentBytes: string }> => {
+    let fileContent: string | null;
+    if (file.type.startsWith("image/")) {
+      fileContent = await compressImage(file, quality);
+    } else {
+      fileContent = await readFile(file);
+    }
+    return {
+      name: file.name,
+      size: file.size,
+      contentBytes: fileContent || "",
+    };
+  };
+
+  // processBatchSequentially: Processes files ONE AT A TIME (not Promise.all).
+  // This ensures only one canvas / FileReader is in memory at any moment,
+  // making it safe to handle 100+ images without OOM crashes.
+  const processBatchSequentially = async (
+    files: File[],
+    startIndex: number,
+    endIndex: number,
+    quality: number
+  ): Promise<{ name: string; size: number; contentBytes: string }[]> => {
+    const results: { name: string; size: number; contentBytes: string }[] = [];
+    for (let i = startIndex; i < endIndex; i++) {
+      const result = await processOneFile(files[i], quality);
+      results.push(result);
+      // Yield to the event loop between files so the browser can run GC
+      // and remain responsive (prevents long-task jank).
+      await new Promise<void>((r) => setTimeout(r, 0));
+    }
+    return results;
+  };
+
   // processBatch: Processes a specific batch (page) of files based on requestPageNumber and batchSize.
   const processBatch = useCallback(async (pageNumber: number) => {
-    if (!rawFiles || rawFiles.length === 0) {
-      // If no files, don't output anything to avoid confusion
+    const files = rawFilesRef.current;
+    if (!files || files.length === 0) {
       return;
     }
 
     if (pageNumber <= 0) {
-      // Invalid page number
       return;
     }
 
-    // Calculate start and end indices for the current page
     const startIndex = (pageNumber - 1) * batchSize;
-    
-    // Check if page is out of range
-    if (startIndex >= rawFiles.length) {
-      // Page number exceeds available files, output empty batch with metadata
-      onEvent({ 
+
+    if (startIndex >= files.length) {
+      onEvent({
         filesJSON: JSON.stringify([]),
-        totalFileCount: rawFiles.length,
-        currentPageNumber: pageNumber
+        totalFileCount: files.length,
+        currentPageNumber: pageNumber,
       });
       return;
     }
@@ -203,42 +267,19 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
         setButtonLoadingState(ButtonLoadingStateEnum.Loading);
       }
 
-      const endIndex = Math.min(startIndex + batchSize, rawFiles.length);
-      
-      // Slice the raw files array to get only the current batch
-      const currentBatch = rawFiles.slice(startIndex, endIndex);
+      const endIndex = Math.min(startIndex + batchSize, files.length);
 
-      // Process only the current batch of files
-      const filesArray = await Promise.all(
-        currentBatch.map(async (file) => {
-          let fileContent: string | null;
-          
-          // Check if file is an image and compress it
-          if (file.type.startsWith('image/')) {
-            fileContent = await compressImage(file, compressionQuality);
-          } else {
-            fileContent = await readFile(file);
-          }
+      // Process files ONE AT A TIME to keep peak memory low
+      const filesArray = await processBatchSequentially(files, startIndex, endIndex, compressionQuality);
 
-          return {
-            name: file.name,
-            size: file.size,
-            contentBytes: fileContent || "",
-          };
-        })
-      );
-
-      // Convert the batch into a JSON string
       const jsonString = JSON.stringify(filesArray);
-      
-      // Trigger the onEvent callback with the batch JSON and metadata
-      onEvent({ 
+
+      onEvent({
         filesJSON: jsonString,
-        totalFileCount: rawFiles.length,
-        currentPageNumber: pageNumber
+        totalFileCount: files.length,
+        currentPageNumber: pageNumber,
       });
 
-      // Set button state to "loaded" if action spinner is enabled
       if (buttonShowActionSpinner) {
         setButtonLoadingState(ButtonLoadingStateEnum.Loaded);
       }
@@ -246,39 +287,39 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
       console.error("Error processing batch:", error);
       setButtonLoadingState(ButtonLoadingStateEnum.Initial);
     }
-  }, [rawFiles, batchSize, compressionQuality, buttonShowActionSpinner, onEvent]);
+  }, [rawFileCount, batchSize, compressionQuality, buttonShowActionSpinner, onEvent]);
 
   // useEffect: Watch for changes to requestPageNumber and process the requested batch
   useEffect(() => {
-    if (requestPageNumber > 0 && rawFiles.length > 0) {
+    if (requestPageNumber > 0 && rawFilesRef.current.length > 0) {
       processBatch(requestPageNumber);
     }
-  }, [requestPageNumber, rawFiles, processBatch]);
+  }, [requestPageNumber, rawFileCount, processBatch]);
 
   // onFileChange: Event handler for when a file is selected using the file input.
   const onFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
       const filesArray = Array.from(event.target.files);
-      
+
       // Reset button state
       setButtonLoadingState(ButtonLoadingStateEnum.Initial);
-      
-      // Store raw files - React will batch this with the state update
-      setRawFiles(prevFiles => {
-        // Process first batch immediately after state update
-        // Use setTimeout to ensure state is committed
-        setTimeout(() => {
-          processBatchWithFiles(filesArray, 1);
-        }, 10);
-        return filesArray;
-      });
-      
-      // Clear the input value for re-selection
+
+      // Store raw files in the ref (no re-render needed for the files themselves)
+      rawFilesRef.current = filesArray;
+      // Update count to trigger the useEffect / re-render for pagination
+      setRawFileCount(filesArray.length);
+
+      // Process first batch immediately
+      setTimeout(() => {
+        processBatchWithFiles(filesArray, 1);
+      }, 10);
+
+      // Clear the input value so the same selection can be re-picked
       event.target.value = "";
     }
   };
 
-  // Helper to process batch with explicit files array (avoids stale closure)
+  // Helper to process batch with explicit files array (avoids stale closure on initial selection)
   const processBatchWithFiles = async (files: File[], pageNumber: number) => {
     if (!files || files.length === 0 || pageNumber <= 0) return;
 
@@ -291,29 +332,15 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
       }
 
       const endIndex = Math.min(startIndex + batchSize, files.length);
-      const currentBatch = files.slice(startIndex, endIndex);
 
-      const filesArray = await Promise.all(
-        currentBatch.map(async (file) => {
-          let fileContent: string | null;
-          if (file.type.startsWith('image/')) {
-            fileContent = await compressImage(file, compressionQuality);
-          } else {
-            fileContent = await readFile(file);
-          }
-          return {
-            name: file.name,
-            size: file.size,
-            contentBytes: fileContent || "",
-          };
-        })
-      );
+      // Process files ONE AT A TIME
+      const filesArray = await processBatchSequentially(files, startIndex, endIndex, compressionQuality);
 
       const jsonString = JSON.stringify(filesArray);
-      onEvent({ 
+      onEvent({
         filesJSON: jsonString,
         totalFileCount: files.length,
-        currentPageNumber: pageNumber
+        currentPageNumber: pageNumber,
       });
 
       if (buttonShowActionSpinner) {
@@ -362,17 +389,17 @@ export const FilesImportControl: React.FC<IFilesImportControlProps> = ({
 
     if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
       const filesArray = Array.from(event.dataTransfer.files);
-      
+
       // Reset button state
       setButtonLoadingState(ButtonLoadingStateEnum.Initial);
-      
-      // Store raw files and process first batch
-      setRawFiles(prevFiles => {
-        setTimeout(() => {
-          processBatchWithFiles(filesArray, 1);
-        }, 10);
-        return filesArray;
-      });
+
+      // Store raw files in the ref and process first batch
+      rawFilesRef.current = filesArray;
+      setRawFileCount(filesArray.length);
+
+      setTimeout(() => {
+        processBatchWithFiles(filesArray, 1);
+      }, 10);
     }
   };
 
